@@ -1,10 +1,7 @@
 #!/bin/bash
 
 # SHELLSCRIPT DE COMANDOS BÁSICOS - RED HAT ENTERPRISE LINUX
-# Autor: Exemplo
-# Data: $(date +%d/%m/%Y)
-# Descrição: Script demonstrando comandos básicos do RHEL
-
+# Autor: Bernardo
 # Limpa a tela para melhor visualização
 clear
 
