@@ -1,652 +1,640 @@
 #!/bin/bash
 
 # ============================================================
-# SHELLSCRIPT - RED HAT ENTERPRISE LINUX
+# SCRIPT DE GERENCIAMENTO DE USUÁRIOS - RED HAT
 # Autor: Bernardo
+# Versão: 6.0
 # ============================================================
 
-# ========== CONFIGURAÇÕES GLOBAIS ==========
-# Cores para output (torna as mensagens mais visíveis)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+# ========== CONFIGURAÇÕES ==========
+VERDE='\033[0;32m'
+VERMELHO='\033[0;31m'
+AMARELO='\033[1;33m'
+AZUL='\033[0;34m'
+ROXO='\033[0;35m'
+CIANO='\033[0;36m'
+FIM='\033[0m'
 
-# Variáveis globais
-LOG_FILE="/tmp/script_intermediario_$(date +%Y%m%d_%H%M%S).log"
-ERROR_COUNT=0
-SUCCESS_COUNT=0
+# Arquivo para armazenar usuários (simulação local)
+USERS_FILE="$HOME/.script_usuarios.txt"
+LOG_FILE="$HOME/.script_redhat_$(date +%Y%m%d_%H%M%S).log"
 
-# ========== FUNÇÕES UTILITÁRIAS ==========
-
-# Função para log com timestamp
-log_message() {
-    local level=$1
-    local message=$2
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    echo -e "${timestamp} - [${level}] - ${message}" >> "$LOG_FILE"
-    
-    case $level in
-        "ERROR")
-            echo -e "${RED}❌ ERRO: ${message}${NC}"
-            ;;
-        "SUCCESS")
-            echo -e "${GREEN}✅ ${message}${NC}"
-            ;;
-        "WARNING")
-            echo -e "${YELLOW}⚠️  AVISO: ${message}${NC}"
-            ;;
-        "INFO")
-            echo -e "${CYAN}ℹ️  ${message}${NC}"
-            ;;
-        *)
-            echo -e "${message}"
-            ;;
-    esac
-}
-
-# Função para tratar erros
-handle_error() {
-    local exit_code=$?
-    local line_number=$1
-    log_message "ERROR" "Falha na linha ${line_number} com código ${exit_code}"
-    ((ERROR_COUNT++))
-}
-
-# Função para verificar se comando foi bem sucedido
-check_success() {
-    local exit_code=$?
-    local success_message=$1
-    local error_message=$2
-    
-    if [ $exit_code -eq 0 ]; then
-        log_message "SUCCESS" "$success_message"
-        ((SUCCESS_COUNT++))
-        return 0
-    else
-        log_message "ERROR" "$error_message"
-        ((ERROR_COUNT++))
-        return 1
-    fi
-}
-
-# Função para perguntar sim/não ao usuário
-ask_yes_no() {
-    local question=$1
-    local answer
-    
-    while true; do
-        echo -e "${YELLOW}$question (s/n): ${NC}"
-        read -r answer
-        case $answer in
-            [Ss]*) return 0 ;;
-            [Nn]*) return 1 ;;
-            *) echo "Por favor, responda 's' ou 'n'" ;;
-        esac
-    done
-}
-
-# Função para validar nome de usuário
-validate_username() {
-    local username=$1
-    
-    # Verifica se o nome está vazio
-    if [ -z "$username" ]; then
-        return 1
-    fi
-    
-    # Verifica se contém apenas caracteres válidos (letras minúsculas, números, underscore, hífen)
-    if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
-        return 1
-    fi
-    
-    return 0
-}
-
-# Função para mostrar menu interativo
-show_menu() {
-    echo ""
-    echo -e "${BLUE}========================================${NC}"
-    echo -e "${MAGENTA}        MENU DE OPÇÕES DO SCRIPT        ${NC}"
-    echo -e "${BLUE}========================================${NC}"
-    echo "1. Executar todas as verificações (modo completo)"
-    echo "2. Apenas informações do sistema"
-    echo "3. Apenas gerenciamento de arquivos"
-    echo "4. Apenas informações de rede"
-    echo "5. Backup do diretório atual"
-    echo "6. Monitorar um processo específico"
-    echo "7. Criar múltiplos usuários em lote (MANUAL)"
-    echo "8. Criar usuários a partir de arquivo"
-    echo "9. Sair"
-    echo -e "${BLUE}========================================${NC}"
-    echo -ne "${YELLOW}Digite sua escolha (1-9): ${NC}"
-}
-
-# ========== FUNÇÕES PRINCIPAIS ==========
-
-# Função com estruturas de decisão (if/else, case)
-check_system_requirements() {
-    log_message "INFO" "Verificando requisitos do sistema..."
-    
-    # Estrutura if/elif/else para verificar usuário
-    echo -e "${CYAN}🔍 Verificando usuário atual...${NC}"
-    CURRENT_USER=$(whoami)
-    
-    if [ "$CURRENT_USER" = "root" ]; then
-        log_message "WARNING" "Você está executando como root - tenha cuidado!"
-        echo -e "${YELLOW}⚠️  Você está como root. Comandos destrutivos serão permitidos.${NC}"
-    elif [ "$CURRENT_USER" = "bernardo" ] || [ "$CURRENT_USER" = "admin" ]; then
-        log_message "INFO" "Usuário privilegiado: $CURRENT_USER"
-        echo -e "${GREEN}✅ Usuário $CURRENT_USER com privilégios adequados${NC}"
-    else
-        log_message "INFO" "Usuário comum: $CURRENT_USER"
-        echo -e "${BLUE}ℹ️  Usuário $CURRENT_USER - alguns comandos podem precisar de sudo${NC}"
-    fi
-    
-    # Verificando espaço em disco com if
-    DISK_SPACE=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
-    echo -e "${CYAN}💾 Espaço em disco usado: ${DISK_SPACE}%${NC}"
-    
-    if [ $DISK_SPACE -gt 90 ]; then
-        log_message "ERROR" "Espaço em disco CRÍTICO: ${DISK_SPACE}% usado"
-        echo -e "${RED}❌ CRÍTICO: Disco quase cheio! Libere espaço imediatamente.${NC}"
-    elif [ $DISK_SPACE -gt 75 ]; then
-        log_message "WARNING" "Espaço em disco moderado: ${DISK_SPACE}% usado"
-        echo -e "${YELLOW}⚠️  Atenção: Disco com ${DISK_SPACE}% de uso${NC}"
-    else
-        log_message "SUCCESS" "Espaço em disco adequado: ${DISK_SPACE}% usado"
-        echo -e "${GREEN}✅ Espaço em disco OK: ${DISK_SPACE}%${NC}"
-    fi
-    
-    check_success "Verificação do sistema concluída" "Falha na verificação do sistema"
-}
-
-# Função com loop FOR - criar múltiplos arquivos
-create_multiple_files() {
-    local num_files=$1
-    local base_name=$2
-    
-    log_message "INFO" "Criando $num_files arquivos com prefixo $base_name"
-    
-    # Estrutura de decisão para validar input
-    if [ -z "$num_files" ] || [ -z "$base_name" ]; then
-        log_message "ERROR" "Número de arquivos ou nome base não fornecidos"
-        return 1
-    fi
-    
-    if ! [[ "$num_files" =~ ^[0-9]+$ ]]; then
-        log_message "ERROR" "$num_files não é um número válido"
-        return 1
-    fi
-    
-    # Loop FOR para criar múltiplos arquivos
-    echo -e "${CYAN}📁 Criando $num_files arquivos...${NC}"
-    for i in $(seq 1 $num_files); do
-        filename="${base_name}_${i}.txt"
-        echo "Conteúdo do arquivo $i criado em $(date)" > "$filename"
-        
-        # Usando case para mostrar progresso diferente a cada 10 arquivos
-        case $((i % 10)) in
-            0)
-                echo -e "${GREEN}✓ Criados $i arquivos até agora${NC}"
-                ;;
-        esac
-    done
-    
-    check_success "$num_files arquivos criados com sucesso" "Falha ao criar arquivos"
-}
-
-# NOVA FUNÇÃO: Criar usuários manualmente (inserindo nomes um por um)
-create_users_manual() {
-    log_message "INFO" "Iniciando criação manual de usuários"
-    
-    echo -e "${CYAN}========================================${NC}"
-    echo -e "${MAGENTA}     CRIAÇÃO MANUAL DE USUÁRIOS       ${NC}"
-    echo -e "${CYAN}========================================${NC}"
-    echo ""
-    
-    # Pergunta quantos usuários criar
-    while true; do
-        echo -ne "${YELLOW}Quantos usuários você deseja criar? ${NC}"
-        read -r num_users
-        
-        # Validar se é um número positivo
-        if [[ "$num_users" =~ ^[0-9]+$ ]] && [ "$num_users" -gt 0 ]; then
-            break
-        else
-            echo -e "${RED}❌ Por favor, digite um número válido maior que zero.${NC}"
-        fi
-    done
-    
-    echo ""
-    echo -e "${GREEN}✅ Você irá criar $num_users usuário(s)${NC}"
-    echo -e "${CYAN}📝 Regras para nomes de usuário:${NC}"
-    echo "   - Apenas letras minúsculas (a-z)"
-    echo "   - Pode conter números (0-9)"
-    echo "   - Pode conter underscore (_) e hífen (-)"
-    echo "   - Deve começar com letra ou underscore"
-    echo ""
-    
-    # Array para armazenar os usuários
-    declare -a USERS_ARRAY
-    
-    # Loop para coletar os nomes dos usuários
-    for i in $(seq 1 $num_users); do
-        while true; do
-            echo -ne "${YELLOW}Digite o nome do usuário $i: ${NC}"
-            read -r username
-            
-            # Converter para minúsculas automaticamente
-            username=$(echo "$username" | tr '[:upper:]' '[:lower:]')
-            
-            # Validar nome do usuário
-            if validate_username "$username"; then
-                USERS_ARRAY+=("$username")
-                echo -e "${GREEN}✅ Nome válido: $username${NC}"
-                break
-            else
-                echo -e "${RED}❌ Nome inválido! Use apenas letras minúsculas, números, _ ou -${NC}"
-                echo -e "${YELLOW}   Exemplos válidos: joao, maria_silva, user123, admin-user${NC}"
-            fi
-        done
-        echo ""
-    done
-    
-    # Mostrar resumo dos usuários
-    echo -e "${CYAN}========================================${NC}"
-    echo -e "${MAGENTA}         RESUMO DOS USUÁRIOS          ${NC}"
-    echo -e "${CYAN}========================================${NC}"
-    for i in "${!USERS_ARRAY[@]}"; do
-        echo "$((i+1)). ${USERS_ARRAY[$i]}"
-    done
-    echo ""
-    
-    # Confirmar criação
-    if ! ask_yes_no "Deseja criar estes usuários no sistema?"; then
-        log_message "INFO" "Criação de usuários cancelada pelo usuário"
-        echo -e "${YELLOW}⚠️  Operação cancelada.${NC}"
-        return 0
-    fi
-    
-    echo ""
-    echo -e "${CYAN}👥 Criando usuários...${NC}"
-    echo -e "${YELLOW}⚠️  ATENÇÃO: Isso criará os usuários no sistema!${NC}"
-    
-    if ! ask_yes_no "Tem certeza que deseja continuar?"; then
-        echo -e "${YELLOW}⚠️  Operação cancelada.${NC}"
-        return 0
-    fi
-    
-    echo ""
-    
-    # Criar os usuários
-    for username in "${USERS_ARRAY[@]}"; do
-        # Verificar se usuário já existe
-        if id "$username" &>/dev/null; then
-            log_message "WARNING" "Usuário $username já existe - ignorando"
-            echo -e "${YELLOW}⚠️  Usuário '$username' já existe no sistema${NC}"
-        else
-            echo -ne "${BLUE}📝 Criando usuário '$username'...${NC}"
-            
-            # Verificar se tem permissão de root
-            if [ "$EUID" -eq 0 ]; then
-                # Executar como root diretamente
-                useradd -m -s /bin/bash "$username" 2>/dev/null
-                if [ $? -eq 0 ]; then
-                    echo -e " ${GREEN}✅ CRIADO${NC}"
-                    log_message "SUCCESS" "Usuário $username criado com sucesso"
-                    ((SUCCESS_COUNT++))
-                else
-                    echo -e " ${RED}❌ FALHA${NC}"
-                    log_message "ERROR" "Falha ao criar usuário $username"
-                    ((ERROR_COUNT++))
-                fi
-            else
-                # Tentar com sudo
-                echo -e "\n${YELLOW}⚠️  Precisa de permissão de root. Tentando com sudo...${NC}"
-                sudo useradd -m -s /bin/bash "$username" 2>/dev/null
-                if [ $? -eq 0 ]; then
-                    echo -e "${GREEN}✅ Usuário '$username' criado com sucesso${NC}"
-                    log_message "SUCCESS" "Usuário $username criado com sucesso (via sudo)"
-                    ((SUCCESS_COUNT++))
-                    
-                    # Opção de definir senha
-                    if ask_yes_no "Deseja definir uma senha para o usuário $username?"; then
-                        echo -ne "${YELLOW}Digite a senha para $username: ${NC}"
-                        read -s password
-                        echo ""
-                        echo "$username:$password" | sudo chpasswd
-                        echo -e "${GREEN}✅ Senha definida${NC}"
-                    fi
-                else
-                    echo -e "${RED}❌ Falha ao criar usuário '$username'${NC}"
-                    log_message "ERROR" "Falha ao criar usuário $username"
-                    ((ERROR_COUNT++))
-                fi
-            fi
-        fi
-        echo ""
-    done
-    
-    log_message "SUCCESS" "Processamento de usuários concluído"
-    echo -e "${GREEN}✅ Criação de usuários finalizada!${NC}"
-}
-
-# Função para criar usuários a partir de arquivo
-create_users_from_file() {
-    log_message "INFO" "Iniciando criação de usuários a partir de arquivo"
-    
-    echo -e "${CYAN}========================================${NC}"
-    echo -e "${MAGENTA}     CRIAÇÃO POR ARQUIVO DE USUÁRIOS   ${NC}"
-    echo -e "${CYAN}========================================${NC}"
-    echo ""
-    
-    local users_file=""
-    
-    # Opção de usar arquivo padrão ou personalizado
-    echo "1. Usar arquivo padrão (/tmp/users_list.txt)"
-    echo "2. Especificar caminho do arquivo"
-    echo "3. Criar novo arquivo com usuários"
-    echo -ne "${YELLOW}Escolha uma opção (1-3): ${NC}"
-    read -r file_option
-    
-    case $file_option in
-        1)
-            users_file="/tmp/users_list.txt"
-            # Criar arquivo de exemplo se não existir
-            if [ ! -f "$users_file" ]; then
-                echo -e "${CYAN}📝 Criando arquivo de exemplo...${NC}"
-                cat > "$users_file" << EOF
-joao
-maria
-pedro
-ana
-carlos
+# ========== INICIALIZAR ARQUIVO DE USUÁRIOS ==========
+inicializar_arquivo() {
+    if [ ! -f "$USERS_FILE" ]; then
+        # Criar arquivo com usuários de exemplo
+        cat > "$USERS_FILE" << EOF
+joao:Joao Silva:/bin/bash:ativo
+maria:Maria Santos:/bin/bash:ativo
+carlos:Carlos Alberto:/bin/bash:ativo
+ana:Ana Paula:/bin/bash:ativo
+pedro:Pedro Lima:/bin/bash:ativo
 EOF
-                echo -e "${GREEN}✅ Arquivo criado: $users_file${NC}"
-            fi
+        echo "Arquivo de usuários criado: $USERS_FILE"
+    fi
+}
+
+# ========== FUNÇÃO PARA LOG ==========
+log() {
+    local tipo=$1
+    local msg=$2
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - [$tipo] - $msg" >> "$LOG_FILE"
+}
+
+# ========== FUNÇÃO PARA MOSTRAR MENSAGENS ==========
+mensagem() {
+    local tipo=$1
+    local texto=$2
+    
+    case $tipo in
+        "ERRO") echo -e "${VERMELHO}❌ $texto${FIM}" ;;
+        "SUCESSO") echo -e "${VERDE}✅ $texto${FIM}" ;;
+        "AVISO") echo -e "${AMARELO}⚠️  $texto${FIM}" ;;
+        "INFO") echo -e "${CIANO}ℹ️  $texto${FIM}" ;;
+        "TITULO") echo -e "${AZUL}$texto${FIM}" ;;
+    esac
+    log "$tipo" "$texto"
+}
+
+# ========== FUNÇÃO PARA LISTAR TODOS OS USUÁRIOS ==========
+listar_usuarios() {
+    clear
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${VERDE}                      LISTA DE USUÁRIOS                    ${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
+    
+    if [ ! -s "$USERS_FILE" ]; then
+        mensagem "AVISO" "Nenhum usuário cadastrado!"
+        echo ""
+        echo -ne "${AMARELO}Pressione ENTER para continuar...${FIM}"
+        read -r
+        return
+    fi
+    
+    # Conta usuários
+    total=$(wc -l < "$USERS_FILE")
+    echo -e "${CIANO}📊 Total de usuários: ${total}${FIM}"
+    echo ""
+    
+    # Mostra tabela de usuários
+    printf "${VERDE}%-3s %-15s %-25s %-12s %s${FIM}\n" "Nº" "USUÁRIO" "NOME COMPLETO" "SHELL" "STATUS"
+    echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+    
+    local num=1
+    while IFS=':' read -r user name shell status; do
+        # Mostra status com cor
+        if [ "$status" == "ativo" ]; then
+            status_show="${VERDE}ATIVO${FIM}"
+        else
+            status_show="${VERMELHO}BLOQUEADO${FIM}"
+        fi
+        
+        printf "%-3s %-15s %-25s %-12s ${status_show}\n" "$num" "$user" "$name" "$shell"
+        ((num++))
+    done < "$USERS_FILE"
+    
+    echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+    echo ""
+    
+    # Menu de detalhes
+    echo -ne "${AMARELO}Digite o número do usuário para ver detalhes (0 para voltar): ${FIM}"
+    read -r escolha
+    
+    if [ "$escolha" -gt 0 ] 2>/dev/null; then
+        ver_detalhes_usuario "$escolha"
+    fi
+}
+
+# ========== FUNÇÃO PARA VER DETALHES DE UM USUÁRIO ==========
+ver_detalhes_usuario() {
+    local num=$1
+    local linha=$(sed -n "${num}p" "$USERS_FILE")
+    
+    if [ -z "$linha" ]; then
+        mensagem "ERRO" "Usuário não encontrado!"
+        echo -ne "${AMARELO}Pressione ENTER...${FIM}"
+        read -r
+        return
+    fi
+    
+    IFS=':' read -r user name shell status <<< "$linha"
+    
+    clear
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${VERDE}                   DETALHES DO USUÁRIO                     ${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
+    echo -e "${CIANO}📋 Informações:${FIM}"
+    echo "   Usuário: $user"
+    echo "   Nome completo: $name"
+    echo "   Shell: $shell"
+    echo "   Status: $( [ "$status" == "ativo" ] && echo "ATIVO" || echo "BLOQUEADO" )"
+    echo ""
+    echo -e "${CIANO}📁 Diretório home simulado: /home/$user${FIM}"
+    echo -e "${CIANO}🆔 UID simulado: $((1000 + num))${FIM}"
+    echo ""
+    
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -ne "${AMARELO}Pressione ENTER para continuar...${FIM}"
+    read -r
+}
+
+# ========== FUNÇÃO PARA CRIAR USUÁRIO ==========
+criar_usuario() {
+    clear
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${VERDE}                     CRIAR USUÁRIO                        ${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
+    
+    echo -e "${CIANO}📋 REGRAS:${FIM}"
+    echo "   - Login: letras minúsculas (a-z), números, _ e -"
+    echo "   - Login deve começar com letra"
+    echo "   - Exemplos: joao, maria_silva, user123"
+    echo ""
+    
+    # Nome de usuário
+    while true; do
+        echo -ne "${AMARELO}Login do usuário: ${FIM}"
+        read -r login
+        login=$(echo "$login" | tr '[:upper:]' '[:lower:]')
+        
+        if [[ ! "$login" =~ ^[a-z][a-z0-9_-]*$ ]]; then
+            mensagem "ERRO" "Login inválido! Use apenas letras minúsculas, números, _ e -"
+            continue
+        fi
+        
+        if grep -q "^$login:" "$USERS_FILE"; then
+            mensagem "ERRO" "Usuário '$login' já existe!"
+            continue
+        fi
+        break
+    done
+    
+    # Nome completo
+    echo -ne "${AMARELO}Nome completo: ${FIM}"
+    read -r nome_completo
+    [ -z "$nome_completo" ] && nome_completo="$login"
+    
+    # Shell
+    echo ""
+    echo -e "${CIANO}Shell disponíveis:${FIM}"
+    echo "   1. /bin/bash"
+    echo "   2. /bin/sh"
+    echo "   3. /bin/csh"
+    echo "   4. /bin/tcsh"
+    echo -ne "${AMARELO}Escolha o shell (1-4) [padrão=1]: ${FIM}"
+    read -r shell_opcao
+    
+    case $shell_opcao in
+        2) shell="/bin/sh" ;;
+        3) shell="/bin/csh" ;;
+        4) shell="/bin/tcsh" ;;
+        *) shell="/bin/bash" ;;
+    esac
+    
+    # Senha
+    echo ""
+    while true; do
+        echo -ne "${AMARELO}Senha: ${FIM}"
+        read -s senha
+        echo ""
+        echo -ne "${AMARELO}Confirmar senha: ${FIM}"
+        read -s senha2
+        echo ""
+        
+        if [ "$senha" != "$senha2" ]; then
+            mensagem "ERRO" "Senhas não conferem!"
+        elif [ ${#senha} -lt 4 ]; then
+            mensagem "ERRO" "Senha muito curta (mínimo 4 caracteres)"
+        else
+            break
+        fi
+    done
+    
+    # Confirmar
+    echo ""
+    echo -e "${CIANO}📝 Resumo:${FIM}"
+    echo "   Login: $login"
+    echo "   Nome: $nome_completo"
+    echo "   Shell: $shell"
+    echo ""
+    
+    if perguntar_sim_nao "Confirmar criação do usuário?"; then
+        # Adiciona ao arquivo
+        echo "$login:$nome_completo:$shell:ativo" >> "$USERS_FILE"
+        mensagem "SUCESSO" "Usuário '$login' criado com sucesso!"
+        
+        # Cria senha em arquivo separado (simulação)
+        echo "$login:$senha" >> "$HOME/.script_senhas.txt"
+        chmod 600 "$HOME/.script_senhas.txt" 2>/dev/null
+    fi
+    
+    echo ""
+    echo -ne "${AMARELO}Pressione ENTER para continuar...${FIM}"
+    read -r
+}
+
+# ========== FUNÇÃO PARA EDITAR USUÁRIO ==========
+editar_usuario() {
+    clear
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${VERDE}                     EDITAR USUÁRIO                       ${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
+    
+    if [ ! -s "$USERS_FILE" ]; then
+        mensagem "AVISO" "Nenhum usuário cadastrado!"
+        echo -ne "${AMARELO}Pressione ENTER...${FIM}"
+        read -r
+        return
+    fi
+    
+    # Mostrar lista
+    echo -e "${CIANO}📋 USUÁRIOS CADASTRADOS:${FIM}"
+    echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+    printf "%-3s %-15s %-25s\n" "Nº" "LOGIN" "NOME"
+    echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+    
+    local num=1
+    while IFS=':' read -r user name shell status; do
+        printf "%-3s %-15s %-25s\n" "$num" "$user" "$name"
+        ((num++))
+    done < "$USERS_FILE"
+    
+    echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+    echo ""
+    
+    echo -ne "${AMARELO}Digite o número do usuário para editar (0 para voltar): ${FIM}"
+    read -r escolha
+    
+    if [ "$escolha" -eq 0 ] 2>/dev/null; then
+        return
+    fi
+    
+    if ! [[ "$escolha" =~ ^[0-9]+$ ]]; then
+        mensagem "ERRO" "Número inválido!"
+        echo -ne "${AMARELO}Pressione ENTER...${FIM}"
+        read -r
+        return
+    fi
+    
+    # Pegar linha do usuário
+    linha=$(sed -n "${escolha}p" "$USERS_FILE")
+    if [ -z "$linha" ]; then
+        mensagem "ERRO" "Usuário não encontrado!"
+        echo -ne "${AMARELO}Pressione ENTER...${FIM}"
+        read -r
+        return
+    fi
+    
+    IFS=':' read -r old_user old_name old_shell old_status <<< "$linha"
+    
+    clear
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${VERDE}              EDITANDO USUÁRIO: $old_user                 ${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
+    
+    echo -e "${CIANO}O que deseja editar?${FIM}"
+    echo "   1. Nome completo"
+    echo "   2. Shell"
+    echo "   3. Status (Ativo/Bloqueado)"
+    echo "   4. Senha"
+    echo "   5. Voltar"
+    echo ""
+    echo -ne "${AMARELO}Escolha (1-5): ${FIM}"
+    read -r opcao
+    
+    case $opcao in
+        1)
+            echo -ne "${AMARELO}Novo nome completo [atual: $old_name]: ${FIM}"
+            read -r novo_nome
+            [ -n "$novo_nome" ] && old_name="$novo_nome"
             ;;
         2)
-            echo -ne "${YELLOW}Digite o caminho completo do arquivo: ${NC}"
-            read -r users_file
-            if [ ! -f "$users_file" ]; then
-                echo -e "${RED}❌ Arquivo não encontrado: $users_file${NC}"
-                return 1
-            fi
+            echo "Shells: 1-/bin/bash 2-/bin/sh 3-/bin/csh 4-/bin/tcsh"
+            echo -ne "${AMARELO}Novo shell [atual: $old_shell]: ${FIM}"
+            read -r shell_opcao
+            case $shell_opcao in
+                2) old_shell="/bin/sh" ;;
+                3) old_shell="/bin/csh" ;;
+                4) old_shell="/bin/tcsh" ;;
+                *) old_shell="/bin/bash" ;;
+            esac
             ;;
         3)
-            echo -ne "${YELLOW}Digite o nome do arquivo a ser criado: ${NC}"
-            read -r users_file
-            if [ -z "$users_file" ]; then
-                users_file="/tmp/meus_usuarios.txt"
+            if [ "$old_status" == "ativo" ]; then
+                old_status="bloqueado"
+                mensagem "INFO" "Usuário será BLOQUEADO"
+            else
+                old_status="ativo"
+                mensagem "INFO" "Usuário será ATIVADO"
             fi
-            
-            echo -e "${CYAN}Digite os nomes dos usuários (um por linha).${NC}"
-            echo -e "${YELLOW}Digite uma linha em branco para finalizar:${NC}"
-            
-            > "$users_file"  # Limpar/ criar arquivo
-            
-            local line_count=0
+            ;;
+        4)
             while true; do
-                echo -ne "Usuário $((line_count+1)): "
-                read -r username
+                echo -ne "${AMARELO}Nova senha: ${FIM}"
+                read -s nova_senha
+                echo ""
+                echo -ne "${AMARELO}Confirmar senha: ${FIM}"
+                read -s confirma_senha
+                echo ""
                 
-                if [ -z "$username" ]; then
+                if [ "$nova_senha" != "$confirma_senha" ]; then
+                    mensagem "ERRO" "Senhas não conferem!"
+                elif [ ${#nova_senha} -lt 4 ]; then
+                    mensagem "ERRO" "Senha muito curta!"
+                else
+                    # Atualiza senha no arquivo de senhas
+                    if [ -f "$HOME/.script_senhas.txt" ]; then
+                        sed -i "/^$old_user:/d" "$HOME/.script_senhas.txt" 2>/dev/null
+                    fi
+                    echo "$old_user:$nova_senha" >> "$HOME/.script_senhas.txt"
+                    chmod 600 "$HOME/.script_senhas.txt" 2>/dev/null
+                    mensagem "SUCESSO" "Senha alterada!"
                     break
                 fi
-                
-                # Validar nome
-                if validate_username "$username"; then
-                    echo "$username" >> "$users_file"
-                    ((line_count++))
-                    echo -e "${GREEN}✅ Adicionado: $username${NC}"
-                else
-                    echo -e "${RED}❌ Nome inválido! Ignorado.${NC}"
-                fi
             done
-            
-            echo -e "${GREEN}✅ $line_count usuários salvos em: $users_file${NC}"
+            ;;
+        5)
+            return
             ;;
         *)
-            echo -e "${RED}❌ Opção inválida${NC}"
-            return 1
+            mensagem "ERRO" "Opção inválida!"
             ;;
     esac
     
-    # Mostrar conteúdo do arquivo
-    echo ""
-    echo -e "${CYAN}Conteúdo do arquivo:${NC}"
-    echo -e "${YELLOW}----------------------------------------${NC}"
-    cat "$users_file"
-    echo -e "${YELLOW}----------------------------------------${NC}"
-    echo ""
-    
-    if ! ask_yes_no "Deseja criar estes usuários no sistema?"; then
-        log_message "INFO" "Criação de usuários cancelada pelo usuário"
-        return 0
+    # Salvar alterações
+    if [ $opcao -ge 1 ] && [ $opcao -le 3 ]; then
+        sed -i "${escolha}s/.*/$old_user:$old_name:$old_shell:$old_status/" "$USERS_FILE"
+        mensagem "SUCESSO" "Usuário atualizado com sucesso!"
     fi
     
-    # Loop para ler arquivo e criar usuários
-    echo -e "${CYAN}👥 Criando usuários...${NC}"
-    
-    while IFS= read -r username; do
-        # Pular linhas vazias
-        [ -z "$username" ] && continue
-        
-        if id "$username" &>/dev/null; then
-            log_message "WARNING" "Usuário $username já existe - ignorando"
-            echo -e "${YELLOW}⚠️  Usuário '$username' já existe${NC}"
-        else
-            echo -ne "${BLUE}📝 Criando usuário '$username'...${NC}"
-            
-            if [ "$EUID" -eq 0 ]; then
-                useradd -m -s /bin/bash "$username" 2>/dev/null
-                if [ $? -eq 0 ]; then
-                    echo -e " ${GREEN}✅ CRIADO${NC}"
-                    log_message "SUCCESS" "Usuário $username criado"
-                    ((SUCCESS_COUNT++))
-                else
-                    echo -e " ${RED}❌ FALHA${NC}"
-                    log_message "ERROR" "Falha ao criar $username"
-                    ((ERROR_COUNT++))
-                fi
-            else
-                sudo useradd -m -s /bin/bash "$username" 2>/dev/null
-                if [ $? -eq 0 ]; then
-                    echo -e " ${GREEN}✅ CRIADO${NC}"
-                    log_message "SUCCESS" "Usuário $username criado (via sudo)"
-                    ((SUCCESS_COUNT++))
-                else
-                    echo -e " ${RED}❌ FALHA${NC}"
-                    log_message "ERROR" "Falha ao criar $username"
-                    ((ERROR_COUNT++))
-                fi
-            fi
-        fi
-    done < "$users_file"
-    
-    log_message "SUCCESS" "Processamento de usuários concluído"
-    echo -e "${GREEN}✅ Criação de usuários finalizada!${NC}"
+    echo ""
+    echo -ne "${AMARELO}Pressione ENTER para continuar...${FIM}"
+    read -r
 }
 
-# Função com loop WHILE - monitorar processo
-monitor_process() {
-    local process_name=$1
-    local max_attempts=10
-    local attempt=1
+# ========== FUNÇÃO PARA DELETAR USUÁRIO ==========
+deletar_usuario() {
+    clear
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${VERMELHO}                    DELETAR USUÁRIO                     ${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
     
-    if [ -z "$process_name" ]; then
-        echo -ne "${YELLOW}Digite o nome do processo para monitorar: ${NC}"
-        read -r process_name
+    if [ ! -s "$USERS_FILE" ]; then
+        mensagem "AVISO" "Nenhum usuário cadastrado!"
+        echo -ne "${AMARELO}Pressione ENTER...${FIM}"
+        read -r
+        return
     fi
     
-    log_message "INFO" "Monitorando processo: $process_name"
-    echo -e "${CYAN}🔍 Monitorando processo '$process_name' por $max_attempts segundos...${NC}"
+    # Mostrar lista
+    echo -e "${CIANO}📋 USUÁRIOS CADASTRADOS:${FIM}"
+    echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+    printf "%-3s %-15s %-25s %-10s\n" "Nº" "LOGIN" "NOME" "STATUS"
+    echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
     
-    # Loop WHILE com contador
-    while [ $attempt -le $max_attempts ]; do
-        if pgrep "$process_name" > /dev/null; then
-            log_message "SUCCESS" "Processo $process_name está em execução (verificação $attempt)"
-            echo -e "${GREEN}✅ Processo $process_name encontrado!${NC}"
-            
-            # Mostra detalhes do processo se encontrado
-            ps aux | grep "$process_name" | grep -v grep
-            return 0
-        else
-            log_message "INFO" "Aguardando processo $process_name (tentativa $attempt/$max_attempts)"
-            echo -e "${YELLOW}⏳ Aguardando processo $process_name... ($attempt/$max_attempts)${NC}"
+    local num=1
+    while IFS=':' read -r user name shell status; do
+        status_icon="[${status}]"
+        printf "%-3s %-15s %-25s %-10s\n" "$num" "$user" "$name" "$status_icon"
+        ((num++))
+    done < "$USERS_FILE"
+    
+    echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+    echo ""
+    
+    echo -ne "${AMARELO}Digite o número do usuário para DELETAR (0 para voltar): ${FIM}"
+    read -r escolha
+    
+    if [ "$escolha" -eq 0 ] 2>/dev/null; then
+        return
+    fi
+    
+    if ! [[ "$escolha" =~ ^[0-9]+$ ]]; then
+        mensagem "ERRO" "Número inválido!"
+        echo -ne "${AMARELO}Pressione ENTER...${FIM}"
+        read -r
+        return
+    fi
+    
+    # Pegar nome do usuário
+    linha=$(sed -n "${escolha}p" "$USERS_FILE")
+    if [ -z "$linha" ]; then
+        mensagem "ERRO" "Usuário não encontrado!"
+        echo -ne "${AMARELO}Pressione ENTER...${FIM}"
+        read -r
+        return
+    fi
+    
+    IFS=':' read -r user name shell status <<< "$linha"
+    
+    echo ""
+    echo -e "${VERMELHO}⚠️  ATENÇÃO: Você está prestes a DELETAR o usuário '$user'${FIM}"
+    echo -e "${CIANO}   Nome: $name${FIM}"
+    echo -e "${CIANO}   Status: $status${FIM}"
+    echo ""
+    
+    if perguntar_sim_nao "Tem certeza que deseja DELETAR este usuário?"; then
+        # Remover do arquivo principal
+        sed -i "${escolha}d" "$USERS_FILE"
+        
+        # Remover senha
+        if [ -f "$HOME/.script_senhas.txt" ]; then
+            sed -i "/^$user:/d" "$HOME/.script_senhas.txt"
         fi
         
-        ((attempt++))
-        sleep 1
+        mensagem "SUCESSO" "Usuário '$user' foi DELETADO com sucesso!"
+    else
+        mensagem "INFO" "Operação cancelada"
+    fi
+    
+    echo ""
+    echo -ne "${AMARELO}Pressione ENTER para continuar...${FIM}"
+    read -r
+}
+
+# ========== FUNÇÃO PARA PERGUNTAR SIM/NÃO ==========
+perguntar_sim_nao() {
+    local pergunta=$1
+    local resposta
+    
+    while true; do
+        echo -ne "${AMARELO}$pergunta (s/n): ${FIM}"
+        read -r resposta
+        case $resposta in
+            [Ss]*) return 0 ;;
+            [Nn]*) return 1 ;;
+            *) echo -e "${VERMELHO}Responda 's' ou 'n'${FIM}" ;;
+        esac
+    done
+}
+
+# ========== INFORMAÇÕES DO SISTEMA ==========
+info_sistema() {
+    clear
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${VERDE}                   INFORMAÇÕES DO SISTEMA                 ${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
+    
+    echo -e "${CIANO}📅 Data/Hora:${FIM}      $(date)"
+    echo -e "${CIANO}💻 Computador:${FIM}     $(hostname)"
+    echo -e "${CIANO}👤 Usuário:${FIM}        $(whoami)"
+    echo -e "${CIANO}📁 Diretório:${FIM}      $(pwd)"
+    echo ""
+    
+    if [ -f /etc/redhat-release ]; then
+        echo -e "${CIANO}🐧 Sistema:${FIM}        $(cat /etc/redhat-release)"
+    else
+        echo -e "${CIANO}🐧 Sistema:${FIM}        Red Hat Enterprise Linux"
+    fi
+    
+    echo -e "${CIANO}⏱️  Atividade:${FIM}      $(uptime | awk -F'up' '{print $2}' | awk -F',' '{print $1}')"
+    echo ""
+    echo -e "${CIANO}📊 Usuários logados:${FIM}"
+    who | awk '{print "   " $1 " - " $3 " " $4}'
+    echo ""
+    
+    echo -e "${CIANO}💾 Espaço em disco:${FIM}"
+    df -h / | awk 'NR==2 {print "   " $5 " usado de " $2 " total"}'
+    echo ""
+    
+    echo -e "${CIANO}👥 Usuários no script: $(wc -l < "$USERS_FILE") cadastrados${FIM}"
+    
+    echo ""
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -ne "${AMARELO}Pressione ENTER para voltar...${FIM}"
+    read -r
+}
+
+# ========== CRIAR ARQUIVOS DE TESTE ==========
+criar_arquivos() {
+    clear
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${VERDE}                   CRIAÇÃO DE ARQUIVOS                    ${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
+    
+    echo -e "${CIANO}📁 Diretório atual: $(pwd)${FIM}"
+    echo ""
+    
+    echo -ne "${AMARELO}Quantos arquivos? ${FIM}"
+    read -r qtd
+    
+    if ! [[ "$qtd" =~ ^[0-9]+$ ]] || [ "$qtd" -eq 0 ]; then
+        mensagem "ERRO" "Número inválido"
+        echo -ne "${AMARELO}Enter para voltar...${FIM}"
+        read -r
+        return
+    fi
+    
+    echo -ne "${AMARELO}Nome base: ${FIM}"
+    read -r base
+    [ -z "$base" ] && base="arquivo"
+    
+    echo ""
+    echo -e "${VERDE}Criando $qtd arquivo(s)...${FIM}"
+    
+    for i in $(seq 1 $qtd); do
+        nome="${base}_${i}.txt"
+        echo "Arquivo criado em $(date) por $(whoami)" > "$nome"
+        echo -e "   ✅ $nome"
     done
     
-    log_message "ERROR" "Processo $process_name não encontrado após $max_attempts tentativas"
-    echo -e "${RED}❌ Processo $process_name não encontrado${NC}"
-    return 1
-}
-
-# Função de backup com verificação de erros
-backup_current_directory() {
-    local backup_dir="/tmp/backup_$(date +%Y%m%d_%H%M%S)"
-    local current_dir=$(pwd)
+    mensagem "SUCESSO" "$qtd arquivos criados"
     
-    log_message "INFO" "Iniciando backup de $current_dir"
-    echo -e "${CYAN}💾 Criando backup do diretório atual...${NC}"
-    
-    # Verificação de erro com if e trap
-    mkdir -p "$backup_dir" || {
-        log_message "ERROR" "Não foi possível criar diretório de backup"
-        return 1
-    }
-    
-    # Copiar arquivos com verificação de erro
-    cp -r "$current_dir"/* "$backup_dir/" 2>/dev/null
-    
-    if [ $? -eq 0 ]; then
-        log_message "SUCCESS" "Backup criado em $backup_dir"
-        echo -e "${GREEN}✅ Backup concluído em: $backup_dir${NC}"
-        echo -e "${BLUE}📊 Tamanho do backup: $(du -sh "$backup_dir" | cut -f1)${NC}"
-        return 0
-    else
-        log_message "ERROR" "Falha ao criar backup"
-        echo -e "${RED}❌ Falha ao criar backup${NC}"
-        return 1
-    fi
-}
-
-# Função principal com estrutura CASE
-main() {
-    # Trap para capturar erros e sinal de interrupção
-    trap 'handle_error $LINENO' ERR
-    trap 'log_message "INFO" "Script interrompido pelo usuário"; exit 130' INT TERM
-    
-    # Log inicial
-    log_message "INFO" "=== INICIANDO SCRIPT INTERMEDIÁRIO ==="
-    log_message "INFO" "Usuário: $USER"
-    log_message "INFO" "Diretório: $(pwd)"
-    
-    # Limpa a tela
-    clear
-    
-    # Mostra cabeçalho
-    echo -e "${BLUE}==================================================${NC}"
-    echo -e "${MAGENTA}    SCRIPT INTERMEDIÁRIO - RHEL v2.1         ${NC}"
-    echo -e "${BLUE}==================================================${NC}"
-    echo -e "${CYAN}Log será salvo em: $LOG_FILE${NC}"
     echo ""
+    echo -ne "${AMARELO}Enter para voltar...${FIM}"
+    read -r
+}
+
+# ========== MENU PRINCIPAL ==========
+mostrar_menu() {
+    clear
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${ROXO}              SISTEMA DE GERENCIAMENTO - RHEL               ${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${CIANO}Arquivo de dados: $USERS_FILE${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
+    echo -e "${VERDE}📌 MENU PRINCIPAL${FIM}"
+    echo ""
+    echo "   1. 🖥️  Informações do sistema"
+    echo "   2. 📁 Criar arquivos de teste"
+    echo ""
+    echo -e "${CIANO}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${FIM}"
+    echo -e "${VERDE}👥 GERENCIAMENTO DE USUÁRIOS ${FIM}"
+    echo -e "${CIANO}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${FIM}"
+    echo ""
+    echo "   3. 📋 LISTAR todos os usuários (READ)"
+    echo "   4. ➕ CRIAR novo usuário (CREATE)"
+    echo "   5. ✏️  EDITAR usuário (UPDATE)"
+    echo "   6. 🗑️  DELETAR usuário (DELETE)"
+    echo ""
+    echo "   7. 🚪 Sair"
+    echo ""
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -ne "${AMARELO}Digite sua escolha (1-7): ${FIM}"
+}
+
+# ========== FUNÇÃO PRINCIPAL ==========
+main() {
+    # Inicializar arquivo de usuários
+    inicializar_arquivo
     
-    # Estrutura CASE para menu interativo
+    # Tela de boas-vindas
+    clear
+    echo -e "${VERDE}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${VERDE}         SISTEMA DE GERENCIAMENTO DE USUÁRIOS              ${FIM}"
+    echo -e "${VERDE}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
+    echo -e "${CIANO}✅ Sistema 100% FUNCIONAL sem necessidade de root${FIM}"
+    echo -e "${CIANO}✅ CRUD completo de usuários funcionando${FIM}"
+    echo -e "${CIANO}✅ Dados salvos em: $USERS_FILE${FIM}"
+    echo ""
+    echo -e "${AMARELO}⚠️  Este é um sistema de simulação local${FIM}"
+    echo -e "${AMARELO}   Os usuários são salvos em um arquivo local, não no sistema operacional${FIM}"
+    echo ""
+    echo -ne "${AMARELO}Pressione ENTER para começar...${FIM}"
+    read -r
+    
     while true; do
-        show_menu
-        read -r choice
+        mostrar_menu
+        read -r opcao
         
-        case $choice in
-            1)
-                log_message "INFO" "Modo completo selecionado"
-                check_system_requirements
-                
-                # Loop for dentro do case
-                echo -e "${CYAN}📁 Criando estrutura de diretórios...${NC}"
-                for dir in teste1 teste2 teste3; do
-                    mkdir -p "/tmp/$dir"
-                    log_message "INFO" "Diretório /tmp/$dir criado"
-                done
-                
-                create_multiple_files 5 "exemplo"
-                backup_current_directory
-                ;;
-            2)
-                log_message "INFO" "Modo informações do sistema"
-                check_system_requirements
-                ;;
-            3)
-                log_message "INFO" "Modo gerenciamento de arquivos"
-                create_multiple_files 3 "teste"
-                ;;
-            4)
-                log_message "INFO" "Modo informações de rede"
-                echo -e "${CYAN}🌐 Configurações de rede:${NC}"
-                ip addr show | head -10
-                check_success "Informações de rede exibidas" "Falha ao exibir rede"
-                ;;
-            5)
-                backup_current_directory
-                ;;
-            6)
-                monitor_process ""
-                ;;
+        case $opcao in
+            1) info_sistema ;;
+            2) criar_arquivos ;;
+            3) listar_usuarios ;;
+            4) criar_usuario ;;
+            5) editar_usuario ;;
+            6) deletar_usuario ;;
             7)
-                create_users_manual  # NOVA FUNÇÃO - Manual com inserção de nomes
-                ;;
-            8)
-                create_users_from_file  # NOVA FUNÇÃO - A partir de arquivo
-                ;;
-            9)
-                log_message "INFO" "Usuário escolheu sair"
-                echo -e "${GREEN}👋 Saindo...${NC}"
-                break
+                clear
+                echo -e "${VERDE}═══════════════════════════════════════════════════════════${FIM}"
+                echo -e "${VERDE}                    SCRIPT FINALIZADO                     ${FIM}"
+                echo -e "${VERDE}═══════════════════════════════════════════════════════════${FIM}"
+                echo ""
+                echo -e "${CIANO}📊 RESUMO FINAL:${FIM}"
+                echo -e "   📁 Arquivo de usuários: $USERS_FILE"
+                echo -e "   👥 Total de usuários: $(wc -l < "$USERS_FILE")"
+                echo -e "   📝 Log: $LOG_FILE"
+                echo ""
+                echo -e "${VERDE}👋 Obrigado por usar o sistema!${FIM}"
+                exit 0
                 ;;
             *)
-                log_message "WARNING" "Opção inválida: $choice"
-                echo -e "${RED}❌ Opção inválida! Tente novamente.${NC}"
+                mensagem "ERRO" "Opção inválida! Digite 1-7"
                 sleep 1
                 ;;
         esac
-        
-        # Pausa antes de voltar ao menu (se não for sair)
-        if [ "$choice" != "9" ]; then
-            echo ""
-            echo -ne "${YELLOW}Pressione Enter para continuar...${NC}"
-            read -r
-            clear
-        fi
     done
-    
-    # Resumo final
-    echo ""
-    echo -e "${BLUE}==================================================${NC}"
-    echo -e "${MAGENTA}              RESUMO DA EXECUÇÃO                ${NC}"
-    echo -e "${BLUE}==================================================${NC}"
-    echo -e "${GREEN}✅ Operações bem-sucedidas: $SUCCESS_COUNT${NC}"
-    echo -e "${RED}❌ Operações com erro: $ERROR_COUNT${NC}"
-    echo -e "${CYAN}📝 Log completo: $LOG_FILE${NC}"
-    echo -e "${BLUE}==================================================${NC}"
-    
-    # Estrutura if/else baseada no resultado
-    if [ $ERROR_COUNT -gt 0 ]; then
-        echo -e "${YELLOW}⚠️  Script finalizado com $ERROR_COUNT erro(s)${NC}"
-        exit 1
-    else
-        echo -e "${GREEN}✅ Script finalizado com SUCESSO!${NC}"
-        exit 0
-    fi
 }
 
-# ========== EXECUÇÃO PRINCIPAL ==========
-# Chamando a função principal
-main "$@"
+# ========== EXECUTAR ==========
+main
