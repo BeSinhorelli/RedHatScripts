@@ -3,7 +3,7 @@
 # ============================================================
 # SCRIPT DE GERENCIAMENTO DE USUÁRIOS - RED HAT
 # Autor: Bernardo
-# Versão: 6.0
+# Versão: 7.0 - Com Monitoramento de Processos
 # ============================================================
 
 # ========== CONFIGURAÇÕES ==========
@@ -54,6 +54,143 @@ mensagem() {
         "TITULO") echo -e "${AZUL}$texto${FIM}" ;;
     esac
     log "$tipo" "$texto"
+}
+
+# ========== FUNÇÃO PARA MONITORAR PROCESSOS ==========
+monitorar_processos() {
+    clear
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo -e "${VERDE}                 MONITORAMENTO DE PROCESSOS                ${FIM}"
+    echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
+    echo ""
+    
+    echo -e "${CIANO}📌 O que você quer monitorar?${FIM}"
+    echo ""
+    echo "   1. 🔍 Monitorar um processo específico (por nome)"
+    echo "   2. 📊 Ver todos os processos do sistema"
+    echo "   3. 👤 Ver processos de um usuário específico"
+    echo "   4. 💻 Ver processos mais pesados (CPU/Memória)"
+    echo "   5. 🔄 Monitorar processo em tempo real (top)"
+    echo "   6. ⏱️  Monitorar processo por tempo (ex: 10 segundos)"
+    echo "   7. 📋 Ver processos de um usuário do script"
+    echo "   8. 🔙 Voltar"
+    echo ""
+    echo -ne "${AMARELO}Escolha (1-8): ${FIM}"
+    read -r opcao_proc
+    
+    case $opcao_proc in
+        1)
+            echo -ne "${AMARELO}Digite o nome do processo (ex: bash, sshd, chrome): ${FIM}"
+            read -r processo
+            echo ""
+            echo -e "${CIANO}🔍 Processos encontrados para '$processo':${FIM}"
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            ps aux | grep -E "$processo" | grep -v grep
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            ;;
+        2)
+            echo ""
+            echo -e "${CIANO}📊 TODOS OS PROCESSOS DO SISTEMA:${FIM}"
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            ps aux | head -20
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            echo -e "${CIANO}Total de processos: $(ps aux | wc -l)${FIM}"
+            ;;
+        3)
+            echo -ne "${AMARELO}Digite o nome do usuário: ${FIM}"
+            read -r usuario_proc
+            echo ""
+            echo -e "${CIANO}👤 Processos do usuário '$usuario_proc':${FIM}"
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            ps aux | grep -E "^$usuario_proc" | grep -v grep
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            if [ $(ps aux | grep -E "^$usuario_proc" | grep -v grep | wc -l) -eq 0 ]; then
+                mensagem "AVISO" "Nenhum processo encontrado para este usuário"
+            fi
+            ;;
+        4)
+            echo ""
+            echo -e "${CIANO}💻 TOP 10 PROCESSOS MAIS PESADOS (CPU):${FIM}"
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            ps aux --sort=-%cpu | head -11
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            echo ""
+            echo -e "${CIANO}💾 TOP 10 PROCESSOS MAIS PESADOS (MEMÓRIA):${FIM}"
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            ps aux --sort=-%mem | head -11
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            ;;
+        5)
+            echo ""
+            echo -e "${CIANO}🔄 Abrindo monitor em tempo real...${FIM}"
+            echo -e "${AMARELO}Pressione 'q' para sair do monitor${FIM}"
+            sleep 2
+            top
+            ;;
+        6)
+            echo -ne "${AMARELO}Digite o nome do processo para monitorar: ${FIM}"
+            read -r processo_mon
+            echo -ne "${AMARELO}Digite o tempo de monitoramento (segundos): ${FIM}"
+            read -r tempo_mon
+            echo ""
+            
+            if ! [[ "$tempo_mon" =~ ^[0-9]+$ ]]; then
+                mensagem "ERRO" "Tempo inválido! Usando 10 segundos"
+                tempo_mon=10
+            fi
+            
+            echo -e "${CIANO}⏱️  Monitorando '$processo_mon' por $tempo_mon segundos...${FIM}"
+            echo ""
+            
+            local encontrado=0
+            for i in $(seq 1 $tempo_mon); do
+                if pgrep -x "$processo_mon" > /dev/null 2>&1; then
+                    echo -e "${VERDE}✅ [$i/$tempo_mon] Processo '$processo_mon' está em execução!${FIM}"
+                    encontrado=1
+                else
+                    echo -e "${AMARELO}⏳ [$i/$tempo_mon] Aguardando processo '$processo_mon'...${FIM}"
+                fi
+                sleep 1
+            done
+            
+            if [ $encontrado -eq 1 ]; then
+                mensagem "SUCESSO" "Processo monitorado com sucesso"
+            else
+                mensagem "AVISO" "Processo não encontrado durante o monitoramento"
+            fi
+            ;;
+        7)
+            echo ""
+            echo -e "${CIANO}📋 Usuários cadastrados no script:${FIM}"
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            cut -d':' -f1 "$USERS_FILE" | nl -w2 -s'. '
+            echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+            echo ""
+            echo -ne "${AMARELO}Digite o número do usuário para ver seus processos: ${FIM}"
+            read -r num_user
+            
+            if [[ "$num_user" =~ ^[0-9]+$ ]]; then
+                usuario_sistema=$(sed -n "${num_user}p" "$USERS_FILE" | cut -d':' -f1)
+                if [ -n "$usuario_sistema" ]; then
+                    echo ""
+                    echo -e "${CIANO}👤 Processos do usuário '$usuario_sistema' (no sistema real):${FIM}"
+                    echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+                    ps aux | grep -E "^$usuario_sistema" | grep -v grep
+                    echo -e "${AMARELO}─────────────────────────────────────────────────────────────────${FIM}"
+                fi
+            fi
+            ;;
+        8)
+            return
+            ;;
+        *)
+            mensagem "ERRO" "Opção inválida!"
+            ;;
+    esac
+    
+    echo ""
+    echo -ne "${AMARELO}Pressione ENTER para continuar...${FIM}"
+    read -r
 }
 
 # ========== FUNÇÃO PARA LISTAR TODOS OS USUÁRIOS ==========
@@ -505,6 +642,8 @@ info_sistema() {
     echo ""
     
     echo -e "${CIANO}👥 Usuários no script: $(wc -l < "$USERS_FILE") cadastrados${FIM}"
+    echo ""
+    echo -e "${CIANO}🔄 Total de processos no sistema: $(ps aux | wc -l)${FIM}"
     
     echo ""
     echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
@@ -566,20 +705,21 @@ mostrar_menu() {
     echo ""
     echo "   1. 🖥️  Informações do sistema"
     echo "   2. 📁 Criar arquivos de teste"
+    echo "   3. 🔄 Monitorar processos"
     echo ""
     echo -e "${CIANO}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${FIM}"
     echo -e "${VERDE}👥 GERENCIAMENTO DE USUÁRIOS ${FIM}"
     echo -e "${CIANO}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${FIM}"
     echo ""
-    echo "   3. 📋 LISTAR todos os usuários (READ)"
-    echo "   4. ➕ CRIAR novo usuário (CREATE)"
-    echo "   5. ✏️  EDITAR usuário (UPDATE)"
-    echo "   6. 🗑️  DELETAR usuário (DELETE)"
+    echo "   4. 📋 LISTAR todos os usuários (READ)"
+    echo "   5. ➕ CRIAR novo usuário (CREATE)"
+    echo "   6. ✏️  EDITAR usuário (UPDATE)"
+    echo "   7. 🗑️  DELETAR usuário (DELETE)"
     echo ""
-    echo "   7. 🚪 Sair"
+    echo "   8. 🚪 Sair"
     echo ""
     echo -e "${AZUL}═══════════════════════════════════════════════════════════${FIM}"
-    echo -ne "${AMARELO}Digite sua escolha (1-7): ${FIM}"
+    echo -ne "${AMARELO}Digite sua escolha (1-8): ${FIM}"
 }
 
 # ========== FUNÇÃO PRINCIPAL ==========
@@ -595,6 +735,7 @@ main() {
     echo ""
     echo -e "${CIANO}✅ Sistema 100% FUNCIONAL sem necessidade de root${FIM}"
     echo -e "${CIANO}✅ CRUD completo de usuários funcionando${FIM}"
+    echo -e "${CIANO}✅ Monitoramento de processos incluído${FIM}"
     echo -e "${CIANO}✅ Dados salvos em: $USERS_FILE${FIM}"
     echo ""
     echo -e "${AMARELO}⚠️  Este é um sistema de simulação local${FIM}"
@@ -610,11 +751,12 @@ main() {
         case $opcao in
             1) info_sistema ;;
             2) criar_arquivos ;;
-            3) listar_usuarios ;;
-            4) criar_usuario ;;
-            5) editar_usuario ;;
-            6) deletar_usuario ;;
-            7)
+            3) monitorar_processos ;;
+            4) listar_usuarios ;;
+            5) criar_usuario ;;
+            6) editar_usuario ;;
+            7) deletar_usuario ;;
+            8)
                 clear
                 echo -e "${VERDE}═══════════════════════════════════════════════════════════${FIM}"
                 echo -e "${VERDE}                    SCRIPT FINALIZADO                     ${FIM}"
@@ -629,7 +771,7 @@ main() {
                 exit 0
                 ;;
             *)
-                mensagem "ERRO" "Opção inválida! Digite 1-7"
+                mensagem "ERRO" "Opção inválida! Digite 1-8"
                 sleep 1
                 ;;
         esac
