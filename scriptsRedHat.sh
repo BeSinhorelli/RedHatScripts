@@ -1,233 +1,406 @@
 #!/bin/bash
 
-# SHELLSCRIPT DE COMANDOS BÁSICOS - RED HAT ENTERPRISE LINUX
+# ============================================================
+# SHELLSCRIPT INTERMEDIÁRIO - RED HAT ENTERPRISE LINUX
 # Autor: Bernardo
-# Limpa a tela para melhor visualização
-clear
+# Versão: 2.0 - Nível Intermediário
+# ============================================================
 
-# Exibe mensagem de início
-echo "=================================================="
-echo "    INICIANDO SCRIPT DE COMANDOS BÁSICOS RHEL    "
-echo "=================================================="
-echo ""
+# ========== CONFIGURAÇÕES GLOBAIS ==========
+# Cores para output (torna as mensagens mais visíveis)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
 
-# COMANDOS DE NAVEGAÇÃO E INFORMAÇÃO DO SISTEMA
+# Variáveis globais
+LOG_FILE="/tmp/script_intermediario_$(date +%Y%m%d_%H%M%S).log"
+ERROR_COUNT=0
+SUCCESS_COUNT=0
 
-# Mostra o diretório atual
-echo "1. Diretório atual (pwd):"
-pwd
-echo ""
+# ========== FUNÇÕES UTILITÁRIAS ==========
 
-# Lista arquivos do diretório atual com detalhes
-echo "2. Listando arquivos do diretório atual (ls -la):"
-ls -la
-echo ""
+# Função para log com timestamp
+log_message() {
+    local level=$1
+    local message=$2
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    echo -e "${timestamp} - [${level}] - ${message}" >> "$LOG_FILE"
+    
+    case $level in
+        "ERROR")
+            echo -e "${RED}❌ ERRO: ${message}${NC}"
+            ;;
+        "SUCCESS")
+            echo -e "${GREEN}✅ ${message}${NC}"
+            ;;
+        "WARNING")
+            echo -e "${YELLOW}⚠️  AVISO: ${message}${NC}"
+            ;;
+        "INFO")
+            echo -e "${CYAN}ℹ️  ${message}${NC}"
+            ;;
+        *)
+            echo -e "${message}"
+            ;;
+    esac
+}
 
-# Mostra informações do sistema
-echo "3. Informações do sistema (uname -a):"
-uname -a
-echo ""
+# Função para tratar erros
+handle_error() {
+    local exit_code=$?
+    local line_number=$1
+    log_message "ERROR" "Falha na linha ${line_number} com código ${exit_code}"
+    ((ERROR_COUNT++))
+}
 
-# Mostra informações da distribuição
-echo "4. Versão do Red Hat:"
-cat /etc/redhat-release
-echo ""
+# Função para verificar se comando foi bem sucedido
+check_success() {
+    local exit_code=$?
+    local success_message=$1
+    local error_message=$2
+    
+    if [ $exit_code -eq 0 ]; then
+        log_message "SUCCESS" "$success_message"
+        ((SUCCESS_COUNT++))
+        return 0
+    else
+        log_message "ERROR" "$error_message"
+        ((ERROR_COUNT++))
+        return 1
+    fi
+}
 
-# Mostra o hostname do sistema
-echo "5. Nome do host (hostname):"
-hostname
-echo ""
+# Função para perguntar sim/não ao usuário
+ask_yes_no() {
+    local question=$1
+    local answer
+    
+    while true; do
+        echo -e "${YELLOW}$question (s/n): ${NC}"
+        read -r answer
+        case $answer in
+            [Ss]*) return 0 ;;
+            [Nn]*) return 1 ;;
+            *) echo "Por favor, responda 's' ou 'n'" ;;
+        esac
+    done
+}
 
-# Mostra usuário atual
-echo "6. Usuário atual (whoami):"
-whoami
-echo ""
+# Função para mostrar menu interativo
+show_menu() {
+    echo ""
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${MAGENTA}        MENU DE OPÇÕES DO SCRIPT        ${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo "1. Executar todas as verificações (modo completo)"
+    echo "2. Apenas informações do sistema"
+    echo "3. Apenas gerenciamento de arquivos"
+    echo "4. Apenas informações de rede"
+    echo "5. Backup do diretório atual"
+    echo "6. Monitorar um processo específico"
+    echo "7. Criar múltiplos usuários em lote"
+    echo "8. Sair"
+    echo -e "${BLUE}========================================${NC}"
+    echo -ne "${YELLOW}Digite sua escolha (1-8): ${NC}"
+}
 
-# Mostra usuários logados
-echo "7. Usuários logados no sistema (who):"
-who
-echo ""
+# ========== FUNÇÕES PRINCIPAIS ==========
 
-# Mostra data e hora
-echo "8. Data e hora atual (date):"
-date
-echo ""
+# Função com estruturas de decisão (if/else, case)
+check_system_requirements() {
+    log_message "INFO" "Verificando requisitos do sistema..."
+    
+    # Estrutura if/elif/else para verificar usuário
+    echo -e "${CYAN}🔍 Verificando usuário atual...${NC}"
+    CURRENT_USER=$(whoami)
+    
+    if [ "$CURRENT_USER" = "root" ]; then
+        log_message "WARNING" "Você está executando como root - tenha cuidado!"
+        echo -e "${YELLOW}⚠️  Você está como root. Comandos destrutivos serão permitidos.${NC}"
+    elif [ "$CURRENT_USER" = "bernardo" ] || [ "$CURRENT_USER" = "admin" ]; then
+        log_message "INFO" "Usuário privilegiado: $CURRENT_USER"
+        echo -e "${GREEN}✅ Usuário $CURRENT_USER com privilégios adequados${NC}"
+    else
+        log_message "INFO" "Usuário comum: $CURRENT_USER"
+        echo -e "${BLUE}ℹ️  Usuário $CURRENT_USER - alguns comandos podem precisar de sudo${NC}"
+    fi
+    
+    # Verificando espaço em disco com if
+    DISK_SPACE=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
+    echo -e "${CYAN}💾 Espaço em disco usado: ${DISK_SPACE}%${NC}"
+    
+    if [ $DISK_SPACE -gt 90 ]; then
+        log_message "ERROR" "Espaço em disco CRÍTICO: ${DISK_SPACE}% usado"
+        echo -e "${RED}❌ CRÍTICO: Disco quase cheio! Libere espaço imediatamente.${NC}"
+    elif [ $DISK_SPACE -gt 75 ]; then
+        log_message "WARNING" "Espaço em disco moderado: ${DISK_SPACE}% usado"
+        echo -e "${YELLOW}⚠️  Atenção: Disco com ${DISK_SPACE}% de uso${NC}"
+    else
+        log_message "SUCCESS" "Espaço em disco adequado: ${DISK_SPACE}% usado"
+        echo -e "${GREEN}✅ Espaço em disco OK: ${DISK_SPACE}%${NC}"
+    fi
+    
+    check_success "Verificação do sistema concluída" "Falha na verificação do sistema"
+}
 
-# Mostra calendário
-echo "9. Calendário do mês atual (cal):"
-cal
-echo ""
+# Função com loop FOR - criar múltiplos arquivos
+create_multiple_files() {
+    local num_files=$1
+    local base_name=$2
+    
+    log_message "INFO" "Criando $num_files arquivos com prefixo $base_name"
+    
+    # Estrutura de decisão para validar input
+    if [ -z "$num_files" ] || [ -z "$base_name" ]; then
+        log_message "ERROR" "Número de arquivos ou nome base não fornecidos"
+        return 1
+    fi
+    
+    if ! [[ "$num_files" =~ ^[0-9]+$ ]]; then
+        log_message "ERROR" "$num_files não é um número válido"
+        return 1
+    fi
+    
+    # Loop FOR para criar múltiplos arquivos
+    echo -e "${CYAN}📁 Criando $num_files arquivos...${NC}"
+    for i in $(seq 1 $num_files); do
+        filename="${base_name}_${i}.txt"
+        echo "Conteúdo do arquivo $i criado em $(date)" > "$filename"
+        
+        # Usando case para mostrar progresso diferente a cada 10 arquivos
+        case $((i % 10)) in
+            0)
+                echo -e "${GREEN}✓ Criados $i arquivos até agora${NC}"
+                ;;
+        esac
+    done
+    
+    check_success "$num_files arquivos criados com sucesso" "Falha ao criar arquivos"
+}
 
-# Mostra tempo de atividade do sistema
-echo "10. Tempo de atividade do sistema (uptime):"
-uptime
-echo ""
+# Função com loop WHILE - monitorar processo
+monitor_process() {
+    local process_name=$1
+    local max_attempts=10
+    local attempt=1
+    
+    if [ -z "$process_name" ]; then
+        echo -ne "${YELLOW}Digite o nome do processo para monitorar: ${NC}"
+        read -r process_name
+    fi
+    
+    log_message "INFO" "Monitorando processo: $process_name"
+    echo -e "${CYAN}🔍 Monitorando processo '$process_name' por $max_attempts segundos...${NC}"
+    
+    # Loop WHILE com contador
+    while [ $attempt -le $max_attempts ]; do
+        if pgrep "$process_name" > /dev/null; then
+            log_message "SUCCESS" "Processo $process_name está em execução (verificação $attempt)"
+            echo -e "${GREEN}✅ Processo $process_name encontrado!${NC}"
+            
+            # Mostra detalhes do processo se encontrado
+            ps aux | grep "$process_name" | grep -v grep
+            return 0
+        else
+            log_message "INFO" "Aguardando processo $process_name (tentativa $attempt/$max_attempts)"
+            echo -e "${YELLOW}⏳ Aguardando processo $process_name... ($attempt/$max_attempts)${NC}"
+        fi
+        
+        ((attempt++))
+        sleep 1
+    done
+    
+    log_message "ERROR" "Processo $process_name não encontrado após $max_attempts tentativas"
+    echo -e "${RED}❌ Processo $process_name não encontrado${NC}"
+    return 1
+}
 
-# COMANDOS DE GERENCIAMENTO DE ARQUIVOS
+# Função com loop FOR para processar lista de usuários
+create_users_batch() {
+    local users_file="/tmp/users_list.txt"
+    
+    log_message "INFO" "Iniciando criação em lote de usuários"
+    
+    # Criando lista de exemplo
+    echo -e "${CYAN}📝 Criando arquivo de exemplo com usuários...${NC}"
+    cat > "$users_file" << EOF
+joao
+maria
+pedro
+ana
+carlos
+EOF
+    
+    echo -e "${YELLOW}Arquivo criado: $users_file${NC}"
+    echo -e "${CYAN}Conteúdo do arquivo:${NC}"
+    cat "$users_file"
+    echo ""
+    
+    if ! ask_yes_no "Deseja criar estes usuários no sistema?"; then
+        log_message "INFO" "Criação de usuários cancelada pelo usuário"
+        return 0
+    fi
+    
+    # Loop FOR para ler arquivo e criar usuários
+    echo -e "${CYAN}👥 Criando usuários...${NC}"
+    while IFS= read -r username; do
+        if id "$username" &>/dev/null; then
+            log_message "WARNING" "Usuário $username já existe - ignorando"
+            echo -e "${YELLOW}⚠️  Usuário $username já existe${NC}"
+        else
+            # Simulação de criação (comentado para segurança)
+            echo -e "${BLUE}📝 Simulação: useradd $username${NC}"
+            log_message "INFO" "Simulação: Criando usuário $username"
+            
+            # Para criar realmente, descomente:
+            # sudo useradd -m -s /bin/bash "$username"
+            # echo "$username:senha123" | sudo chpasswd
+        fi
+    done < "$users_file"
+    
+    log_message "SUCCESS" "Processamento de usuários concluído"
+    echo -e "${GREEN}✅ Processamento de lista de usuários concluído${NC}"
+}
 
-# Cria um diretório de teste
-echo "11. Criando diretório de teste (mkdir):"
-mkdir -p /tmp/meu_diretorio_teste
-echo "Diretório /tmp/meu_diretorio_teste criado"
-echo ""
+# Função de backup com verificação de erros
+backup_current_directory() {
+    local backup_dir="/tmp/backup_$(date +%Y%m%d_%H%M%S)"
+    local current_dir=$(pwd)
+    
+    log_message "INFO" "Iniciando backup de $current_dir"
+    echo -e "${CYAN}💾 Criando backup do diretório atual...${NC}"
+    
+    # Verificação de erro com if e trap
+    mkdir -p "$backup_dir" || {
+        log_message "ERROR" "Não foi possível criar diretório de backup"
+        return 1
+    }
+    
+    # Copiar arquivos com verificação de erro
+    cp -r "$current_dir"/* "$backup_dir/" 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        log_message "SUCCESS" "Backup criado em $backup_dir"
+        echo -e "${GREEN}✅ Backup concluído em: $backup_dir${NC}"
+        echo -e "${BLUE}📊 Tamanho do backup: $(du -sh "$backup_dir" | cut -f1)${NC}"
+        return 0
+    else
+        log_message "ERROR" "Falha ao criar backup"
+        echo -e "${RED}❌ Falha ao criar backup${NC}"
+        return 1
+    fi
+}
 
-# Navega para o diretório de teste
-echo "12. Navegando para o diretório de teste (cd):"
-cd /tmp/meu_diretorio_teste
-pwd
-echo ""
+# Função principal com estrutura CASE
+main() {
+    # Trap para capturar erros e sinal de interrupção
+    trap 'handle_error $LINENO' ERR
+    trap 'log_message "INFO" "Script interrompido pelo usuário"; exit 130' INT TERM
+    
+    # Log inicial
+    log_message "INFO" "=== INICIANDO SCRIPT INTERMEDIÁRIO ==="
+    log_message "INFO" "Usuário: $USER"
+    log_message "INFO" "Diretório: $(pwd)"
+    
+    # Limpa a tela
+    clear
+    
+    # Mostra cabeçalho
+    echo -e "${BLUE}==================================================${NC}"
+    echo -e "${MAGENTA}    SCRIPT INTERMEDIÁRIO - RHEL v2.0         ${NC}"
+    echo -e "${BLUE}==================================================${NC}"
+    echo -e "${CYAN}Log será salvo em: $LOG_FILE${NC}"
+    echo ""
+    
+    # Estrutura CASE para menu interativo
+    while true; do
+        show_menu
+        read -r choice
+        
+        case $choice in
+            1)
+                log_message "INFO" "Modo completo selecionado"
+                check_system_requirements
+                
+                # Loop for dentro do case
+                echo -e "${CYAN}📁 Criando estrutura de diretórios...${NC}"
+                for dir in teste1 teste2 teste3; do
+                    mkdir -p "/tmp/$dir"
+                    log_message "INFO" "Diretório /tmp/$dir criado"
+                done
+                
+                create_multiple_files 5 "exemplo"
+                backup_current_directory
+                ;;
+            2)
+                log_message "INFO" "Modo informações do sistema"
+                check_system_requirements
+                ;;
+            3)
+                log_message "INFO" "Modo gerenciamento de arquivos"
+                create_multiple_files 3 "teste"
+                ;;
+            4)
+                log_message "INFO" "Modo informações de rede"
+                echo -e "${CYAN}🌐 Configurações de rede:${NC}"
+                ip addr show | head -10
+                check_success "Informações de rede exibidas" "Falha ao exibir rede"
+                ;;
+            5)
+                backup_current_directory
+                ;;
+            6)
+                monitor_process ""
+                ;;
+            7)
+                create_users_batch
+                ;;
+            8)
+                log_message "INFO" "Usuário escolheu sair"
+                echo -e "${GREEN}👋 Saindo...${NC}"
+                break
+                ;;
+            *)
+                log_message "WARNING" "Opção inválida: $choice"
+                echo -e "${RED}❌ Opção inválida! Tente novamente.${NC}"
+                sleep 1
+                ;;
+        esac
+        
+        # Pausa antes de voltar ao menu (se não for sair)
+        if [ "$choice" != "8" ]; then
+            echo ""
+            echo -ne "${YELLOW}Pressione Enter para continuar...${NC}"
+            read -r
+            clear
+        fi
+    done
+    
+    # Resumo final
+    echo ""
+    echo -e "${BLUE}==================================================${NC}"
+    echo -e "${MAGENTA}              RESUMO DA EXECUÇÃO                ${NC}"
+    echo -e "${BLUE}==================================================${NC}"
+    echo -e "${GREEN}✅ Operações bem-sucedidas: $SUCCESS_COUNT${NC}"
+    echo -e "${RED}❌ Operações com erro: $ERROR_COUNT${NC}"
+    echo -e "${CYAN}📝 Log completo: $LOG_FILE${NC}"
+    echo -e "${BLUE}==================================================${NC}"
+    
+    # Estrutura if/else baseada no resultado
+    if [ $ERROR_COUNT -gt 0 ]; then
+        echo -e "${YELLOW}⚠️  Script finalizado com $ERROR_COUNT erro(s)${NC}"
+        exit 1
+    else
+        echo -e "${GREEN}✅ Script finalizado com SUCESSO!${NC}"
+        exit 0
+    fi
+}
 
-# Cria arquivos de exemplo
-echo "13. Criando arquivos de exemplo (touch):"
-touch arquivo1.txt arquivo2.txt arquivo3.txt
-echo "Arquivos criados:"
-ls -la
-echo ""
-
-# Adiciona conteúdo aos arquivos
-echo "14. Adicionando conteúdo aos arquivos (echo com redirecionamento):"
-echo "Este é o conteúdo do arquivo 1" > arquivo1.txt
-echo "Conteúdo do arquivo 2" > arquivo2.txt
-echo "Arquivo 3 com texto" > arquivo3.txt
-echo "Conteúdo adicionado"
-echo ""
-
-# Visualiza conteúdo de arquivo
-echo "15. Visualizando conteúdo de arquivo (cat):"
-cat arquivo1.txt
-echo ""
-
-# Copia arquivo
-echo "16. Copiando arquivo (cp):"
-cp arquivo1.txt copia_arquivo1.txt
-echo "Arquivo copiado:"
-ls -la copia_arquivo1.txt
-echo ""
-
-# Move/Renomeia arquivo
-echo "17. Renomeando arquivo (mv):"
-mv arquivo2.txt arquivo_renomeado.txt
-echo "Arquivo renomeado:"
-ls -la arquivo_renomeado.txt
-echo ""
-
-# Conta linhas, palavras e caracteres
-echo "18. Contando linhas, palavras e caracteres (wc):"
-wc arquivo1.txt
-echo ""
-
-# Mostra primeiras linhas
-echo "19. Primeiras 2 linhas do arquivo (head):"
-head -2 arquivo1.txt
-echo ""
-
-# Mostra últimas linhas
-echo "20. Últimas 2 linhas do arquivo (tail):"
-tail -2 arquivo1.txt
-echo ""
-
-# COMANDOS DE PERMISSÕES
-
-# Mostra permissões dos arquivos
-echo "21. Permissões dos arquivos:"
-ls -l
-echo ""
-
-# Altera permissões de arquivo
-echo "22. Alterando permissões do arquivo (chmod 644):"
-chmod 644 arquivo1.txt
-ls -l arquivo1.txt
-echo ""
-
-# COMANDOS DE PROCESSOS E SISTEMA
-
-# Mostra processos do usuário
-echo "23. Processos do usuário atual (ps):"
-ps aux | head -5
-echo ""
-
-# Mostra processos de forma hierárquica
-echo "24. Árvore de processos (pstree):"
-pstree | head -5
-echo ""
-
-# Mostra uso de memória
-echo "25. Uso de memória (free -h):"
-free -h
-echo ""
-
-# Mostra uso de disco
-echo "26. Uso de disco (df -h):"
-df -h | head -5
-echo ""
-
-# Mostra diretórios com maior espaço
-echo "27. Tamanho dos diretórios (du -sh):"
-du -sh /tmp/* 2>/dev/null | head -5
-echo ""
-
-# COMANDOS DE REDE
-
-# Mostra configuração de rede
-echo "28. Configuração de rede (ip addr):"
-ip addr show | head -10
-echo ""
-
-# Mostra tabela de roteamento
-echo "29. Tabela de roteamento (ip route):"
-ip route
-echo ""
-
-# Testa conectividade (ping - 3 pacotes)
-echo "30. Testando conectividade (ping -c 3 google.com):"
-ping -c 3 google.com
-echo ""
-
-# Mostra conexões de rede
-echo "31. Conexões de rede (netstat ou ss):"
-ss -tuln | head -5
-echo ""
-
-# GERENCIAMENTO DE PACOTES (RHEL)
-
-# Verifica atualizações disponíveis (comentado pois precisa de root)
-echo "32. Verificando atualizações (dnf check-update):"
-echo "Nota: Seria executado 'dnf check-update' mas requer privilégios de root"
-echo ""
-
-# Lista pacotes instalados
-echo "33. Listando pacotes instalados (rpm -qa | head):"
-rpm -qa | head -5
-echo ""
-
-# GERENCIAMENTO DE USUÁRIOS
-
-# Mostra arquivo de usuários
-echo "34. Últimas 5 linhas do arquivo de usuários (tail -5 /etc/passwd):"
-tail -5 /etc/passwd
-echo ""
-
-# Mostra grupos
-echo "35. Grupos do usuário atual (groups):"
-groups
-echo ""
-
-# LIMPEZA
-
-# Retorna ao diretório original
-echo "36. Retornando ao diretório original:"
-cd -
-echo ""
-
-# Remove diretório de teste
-echo "37. Removendo diretório de teste (rm -rf):"
-rm -rf /tmp/meu_diretorio_teste
-echo "Diretório de teste removido"
-echo ""
-
-# Finalização
-echo "=================================================="
-echo "            SCRIPT FINALIZADO COM SUCESSO         "
-echo "=================================================="
-echo "Total de comandos executados: 37"
-echo "Data/Hora: $(date)"
+# ========== EXECUÇÃO PRINCIPAL ==========
+# Chamando a função principal
+main "$@"
