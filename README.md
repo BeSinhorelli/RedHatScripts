@@ -16,7 +16,7 @@ Script para automação de tarefas no RHEL demonstrando conceitos de shell scrip
 - ✅ Sistema de logging completo
 - ✅ Backup automático
 - ✅ Monitoramento de processos
-- ✅ Criação de usuários em lote
+- ✅ CRUD de usuários
 
 ## 🚀 Instalação
 
