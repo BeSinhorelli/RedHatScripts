@@ -1,4 +1,5 @@
-<h1 align="center"> 🐧 Script Red Hat Enterprise Linux </h1>
+<h1 align="center"> 🐧 Script Red Hat Enterprise Linux   
+</h1>
 
 ![Bash](https://skillicons.dev/icons?i=bash)   ![RedHat](https://skillicons.dev/icons?i=redhat)
 
@@ -21,8 +22,7 @@ Script para automação de tarefas no RHEL demonstrando conceitos de shell scrip
 
 ```bash
 # Baixar o script
-git clone https://github.com/seu-usuario/rhel-script.git
-cd rhel-script
+git clone https://github.com/BeSinhorelli/scriptsRedHat.sh
 
 # Dar permissão
 chmod +x scriptsRedHat.sh
