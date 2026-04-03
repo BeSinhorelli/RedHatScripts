@@ -1,8 +1,6 @@
-# 🐧 Script Red Hat Enterprise Linux
+<h1 align="center"> 🐧 Script Red Hat Enterprise Linux </h1>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Bash Version](https://img.shields.io/badge/bash-4.0%2B-brightgreen.svg)](https://www.gnu.org/software/bash/)
-[![RHEL](https://img.shields.io/badge/RHEL-7%2B-red.svg)](https://www.redhat.com/)
+![Bash](https://skillicons.dev/icons?i=bash)   ![RedHat](https://skillicons.dev/icons?i=redhat)
 
 ## 📋 Sobre
 
