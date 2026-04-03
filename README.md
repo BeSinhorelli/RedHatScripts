@@ -27,7 +27,7 @@ git clone https://github.com/seu-usuario/rhel-script.git
 cd rhel-script
 
 # Dar permissão
-chmod +x script_intermediario.sh
+chmod +x scriptsRedHat.sh
 
 # Executar
-./script_intermediario.sh
+./scriptsRedHat.sh
